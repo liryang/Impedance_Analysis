@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 
-def parse_txt_files(data_dir='data'):
+def parse_txt_files(data_dir: str):
     # 初始化结果字典（嵌套结构：{前缀: {日期时间: DataFrame}}）
     result_dict = {}
     
@@ -33,6 +33,6 @@ def parse_txt_files(data_dir='data'):
 
 if __name__ == '__main__':
     # 执行解析并生成字典
-    dataframe_dict = parse_txt_files()
+    dataframe_dict = parse_txt_files(data_dir='./data')
     print()
     
