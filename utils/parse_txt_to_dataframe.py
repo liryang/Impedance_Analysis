@@ -19,7 +19,7 @@ def parse_txt_files(data_dir: str):
             try:
                 # 读取txt文件为DataFrame
                 df = pd.read_csv(file_path, sep=';', comment='%', engine='python')  # 使用分号分隔，自动跳过以%开头的注释行
-                df.columns = ['fre', 'X1', 'Y1', 'X2', 'Y2']
+                df.columns = ['frequency', 'x1', 'y1', 'x2', 'y2']
                 
                 # 按前缀分类存储为嵌套字典
                 if prefix not in result_dict:
