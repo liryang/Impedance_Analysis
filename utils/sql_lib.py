@@ -1,10 +1,7 @@
-from click.core import batch
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-
-from utils import ExperimentInfo
-from utils.sql_create import Base, ExperimentInfo, ExperimentData
 import pandas as pd
+from utils.sql_create import Base, ExperimentInfo, ExperimentData
 from utils.parse_txt_to_dataframe import parse_txt_files
 
 class DatabaseHandler:
@@ -15,7 +12,6 @@ class DatabaseHandler:
         # 初始化表结构（首次运行时创建）
         Base.metadata.create_all(self.engine)
     
-    # write_experiment_info 输入ExperimentInfo型
     def write_experiment_info(self, info:ExperimentInfo) -> int:
         """
         写入实验信息到experiment_info表（自动检查重复数据）
@@ -30,7 +26,6 @@ class DatabaseHandler:
         self.session.commit()
         return info.experiment_id
 
-    # write_experiment_info 输入参数辅助方法 
     def write_experiment_info_by_params(self, file_name, prefix, date_str, time_str, batch_id): 
         """ 
         通过参数构建ExperimentInfo对象并写入表（自动检查重复数据） 
@@ -98,39 +93,55 @@ class DatabaseHandler:
         self.session.commit()
         return target_exp
 
-    # def delete_experiment_data_(self, experiment_id: int, metric: str) -> None:
-    #     """
-    #     根据experiment_id和metric删除实验数据（自动检查数据是否存在）
-    #     :param experiment_id: 关联的实验信息ID（外键）
-    #     :param metric: 指标类型（如温度、压力）
-    #     :raises ValueError: 数据不存在时抛出异常
-    #     """
-    #     # 检查实验数据是否存在
-    #     target_data = self.session.query(ExperimentData).filter_by(
-    #         experiment_id=experiment_id,
-    #         metric=metric
-    #     ).first()
-    #     if not target_data:
-    #         raise ValueError(f"实验数据不存在，唯一标识: {{'experiment_id': {experiment_id}, 'metric': '{metric}'}}")
-    #
-    #     # 删除实验数据
-    #     self.session.delete(target_data)
-    #     self.session.commit()
-    #
-    # def get_all_experiment_info(self):
-    #     """
-    #     查询所有实验信息
-    #     :return: 实验信息列表
-    #     """
-    #     return self.session.query(ExperimentInfo).all()
-    #
-    # def get_experiment_info_by_filename(self, file_name):
-    #     """
-    #     根据文件名查询实验信息
-    #     :param file_name: 目标文件名
-    #     :return: 实验信息对象（或None）
-    #     """
-    #     return self.session.query(ExperimentInfo).filter_by(file_name=file_name).first()
+    def get_all_experiment_info(self) -> list[type[ExperimentInfo]]:
+        """
+        查询所有实验信息
+        :return: 实验信息列表
+        """
+        return self.session.query(ExperimentInfo).all()
+    
+    def get_experiment_info_by_filename(self, file_name) -> type[ExperimentInfo] | None:
+        """
+        根据文件名查询实验信息
+        :param file_name: 目标文件名
+        :return: 实验信息对象（或None）
+        """
+        return self.session.query(ExperimentInfo).filter_by(file_name=file_name).first()
+
+    def get_experiment_data_by_filename(self, file_name) -> pd.DataFrame:
+        """
+        根据文件名查询关联的实验数据
+        :param file_name: 目标文件名（需存在于experiment_info表）
+        :return: 实验数据列表（ExperimentData对象）
+        :raises ValueError: 文件名不存在时抛出异常
+        """
+        # 先获取实验信息
+        exp_info = self.get_experiment_info_by_filename(file_name)
+        if not exp_info:
+            raise ValueError(f"文件名 {file_name} 不存在于experiment_info表")
+        # 查询关联的实验数据
+        res = self.session.query(ExperimentData).filter_by(experiment_id=exp_info.experiment_id).all()
+        # 将查询结果转换为DataFrame
+        df = pd.DataFrame([(data.frequency, data.x1, data.y1, data.x2, data.y2) for data in res], columns=['frequency', 'x1', 'y1', 'x2', 'y2'])
+        return df
+
+    def update_batch_id_by_filename(self, file_name: str, batch_id_new: str) -> ExperimentInfo:
+        """
+        根据文件名更新实验信息中的batch_id
+        :param file_name: 目标文件名（需存在于experiment_info表）
+        :param batch_id_new: 新的批次ID
+        :return: 更新后的实验信息对象
+        :raises ValueError: 文件名不存在时抛出异常
+        """
+        # 获取现有实验信息
+        exp_info = self.get_experiment_info_by_filename(file_name)
+        if not exp_info:
+            raise ValueError(f"文件名 {file_name} 不存在于experiment_info表")
+        
+        # 更新batch_id
+        exp_info.batch_id = batch_id_new
+        self.session.commit()
+        return exp_info
 
     def close_session(self):
         """
@@ -163,17 +174,21 @@ if __name__ == '__main__':
             except ValueError as e:
                 print("写入数据失败：", e)
 
-    # # 测试正常删除实验数据
-    # try:
-    #     db_handler.delete_experiment_data(experiment_id=1, metric="temperature")
-    #     print('实验数据删除成功')
-    # except ValueError as e:
-    #     print("删除数据失败：", e)
+    infos = db_handler.get_all_experiment_info()
+    for info in infos:
+        print(f'{info.file_name}:{info.batch_id}')
 
-    # # 测试删除不存在的实验数据
-    # try:
-    #     db_handler.delete_experiment_data(experiment_id=1, metric="pressure")
-    # except ValueError as e:
-    #     print("删除数据失败（预期）：", e)
+    batch_id_new = 'OG'
+    for info in infos:
+        try:
+            db_handler.update_batch_id_by_filename(file_name=info.file_name, batch_id_new=batch_id_new)
+            print(f'更新实验信息batch_id:{info.file_name} -> {batch_id_new}' )
+        except ValueError as e:
+            print("更新数据失败：", e)
+    
+    infos = db_handler.get_all_experiment_info()
+    for info in infos:
+        print(f'{info.file_name}:{info.batch_id}')
 
+    df = db_handler.get_experiment_data_by_filename(infos[15].file_name)
     db_handler.close_session()
